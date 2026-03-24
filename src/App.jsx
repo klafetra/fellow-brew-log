@@ -16,6 +16,77 @@ const TEXT_DIM = "#6E6E6E";
 const cToF = (c) => Math.round(c * 9 / 5 + 32);
 const fToC = (f) => Math.round((f - 32) * 5 / 9);
 
+// Boiling point at elevation (in feet) — returns °F
+const boilingPointF = (elevFt) => 212 - (elevFt / 500) * 0.9;
+const boilingPointC = (elevFt) => fToC(boilingPointF(elevFt));
+
+const POPULAR_ROASTERS = [
+  "Onyx Coffee Lab", "Fellow Drops", "Proud Mary", "Intelligentsia", "Counter Culture",
+  "Stumptown", "Blue Bottle", "Verve Coffee Roasters", "Heart Coffee", "Sey Coffee",
+  "George Howell", "Passenger Coffee", "La Colombe", "Equator Coffees", "Olympia Coffee",
+  "Madcap Coffee", "Ruby Coffee Roasters", "Devoción", "Klatch Coffee", "Black & White Coffee",
+  "Cat & Cloud", "Huckleberry Roasters", "Wonderstate Coffee", "PT's Coffee",
+  "Ritual Coffee Roasters", "Tandem Coffee", "Brandywine Coffee", "Little Wolf Coffee",
+  "Methodical Coffee", "Dragonfly Coffee", "Parlor Coffee", "Joe Coffee Company",
+  "Blueprint Coffee", "Coava Coffee", "Roseline Coffee", "Café Integral",
+  "Driftaway Coffee", "Trade Coffee", "Birch Coffee", "La Cabra",
+  "Tim Wendelboe", "Square Mile Coffee", "Drop Coffee", "The Barn",
+  "Kafiex Roasters", "PERC Coffee", "Regalia Coffee", "Mostra Coffee",
+  "Tony's Coffee", "Chromatic Coffee", "Temple Coffee", "Camber Coffee",
+  "Dak Coffee Roasters", "Dayglow Coffee", "Boxcar Coffee Roasters", "Vesta Coffee Roasters", "Base Coat Coffee",
+];
+
+const COFFEE_ORIGINS = [
+  "Ethiopia", "Colombia", "Kenya", "Guatemala", "Costa Rica", "Brazil",
+  "Panama", "Honduras", "El Salvador", "Peru", "Rwanda", "Burundi",
+  "Tanzania", "Uganda", "DRC (Congo)", "Indonesia", "Sumatra",
+  "Java", "Sulawesi", "Papua New Guinea", "Mexico", "Nicaragua",
+  "Bolivia", "Ecuador", "Yemen", "India", "Myanmar",
+  "Thailand", "Vietnam", "China (Yunnan)", "Hawaii (Kona)",
+  "Jamaica (Blue Mountain)", "Blend",
+];
+
+function SearchableInput({ value, onChange, suggestions, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState(value || "");
+  const filtered = filter.length > 0
+    ? suggestions.filter(s => s.toLowerCase().includes(filter.toLowerCase())).slice(0, 6)
+    : suggestions.slice(0, 8);
+
+  useEffect(() => { setFilter(value || ""); }, [value]);
+
+  return (
+    <div>
+      <input
+        value={filter}
+        onChange={e => { setFilter(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 250)}
+        placeholder={placeholder}
+        style={{
+          width: "100%", background: "transparent", border: "none", color: TEXT,
+          fontSize: 15, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          marginTop: 8, borderTop: `0.5px solid ${BORDER}`, paddingTop: 4,
+          maxHeight: 180, overflowY: "auto",
+        }}>
+          {filtered.map(s => (
+            <div key={s} onMouseDown={() => { onChange(s); setFilter(s); setOpen(false); }} style={{
+              padding: "8px 0", fontSize: 13,
+              color: filter.length > 0 && s.toLowerCase().includes(filter.toLowerCase()) ? AMBER : TEXT_MED,
+              cursor: "pointer",
+              borderBottom: `0.5px solid ${BORDER}`,
+            }}>{s}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const initialBeans = [
   { id: 1, name: "Worka Sakaro", roaster: "Onyx Coffee Lab", origin: "Ethiopia", process: "Natural", roast: "Light" },
   { id: 2, name: "La Palma y El Tucán", roaster: "Fellow Drops", origin: "Colombia", process: "Washed", roast: "Medium" },
@@ -117,7 +188,8 @@ const aiResponse = {
     { param: "Bloom time", field: "bloomTime", current: "40s", suggested: 45, unit: "s", reason: "Extended bloom for natural process allows more CO₂ release" },
     { param: "SS pulse interval", field: "ssInterval", current: "23s", suggested: 28, unit: "s", reason: "Longer intervals between pulses = more drawdown time = fuller body" },
   ],
-  confidence: "High — based on 2 brews with consistent pattern"
+  confidence: "High — based on 2 brews with consistent pattern",
+  elevationNote: null, // will be set dynamically
 };
 
 // ── UI Components ──
@@ -677,10 +749,16 @@ function LogCard({ log, bean, useFahrenheit, onRequestAI, showAI }) {
 
 // ── AI Panel ──
 
-function AIPanel({ beanId, onApplyTweak, useFahrenheit }) {
+function AIPanel({ beanId, onApplyTweak, useFahrenheit, elevation }) {
   const [applied, setApplied] = useState({});
   const handleApply = (tweak, i) => { onApplyTweak(beanId, tweak.field, tweak.suggested); setApplied(a => ({ ...a, [i]: true })); };
   const handleApplyAll = () => { aiResponse.tweaks.forEach((t, i) => { onApplyTweak(beanId, t.field, t.suggested); setApplied(a => ({ ...a, [i]: true })); }); };
+
+  const elevNote = elevation && elevation > 3000
+    ? `Note: At your elevation (${elevation.toLocaleString()}ft), water boils at ~${Math.round(boilingPointF(elevation))}°F. Temperature suggestions have been adjusted — you may want to use the Aiden's max temp setting to compensate for the lower boiling point.`
+    : elevation
+    ? `At your elevation (${elevation.toLocaleString()}ft), boiling point is ~${Math.round(boilingPointF(elevation))}°F — minimal impact on brewing.`
+    : null;
 
   return (
     <div style={{
@@ -695,6 +773,15 @@ function AIPanel({ beanId, onApplyTweak, useFahrenheit }) {
         </span>
       </div>
       <p style={{ fontSize: 13, color: TEXT_MED, lineHeight: 1.6, margin: "0 0 16px" }}>{aiResponse.summary}</p>
+      {elevNote && (
+        <div style={{
+          background: "rgba(230,167,64,0.08)", borderRadius: 8, padding: "10px 12px",
+          marginBottom: 12, display: "flex", gap: 8, alignItems: "flex-start",
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={AMBER} strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 2l4 8H8z"/><path d="M2 22h20"/><path d="M6 18l6-12 6 12"/></svg>
+          <span style={{ fontSize: 12, color: TEXT_MED, lineHeight: 1.5 }}>{elevNote}</span>
+        </div>
+      )}
       <div style={{ fontSize: 12, color: TEXT_DIM, marginBottom: 8, fontWeight: 500 }}>Suggested tweaks</div>
       {aiResponse.tweaks.map((tweak, i) => {
         const isTemp = tweak.field === "bloomTemp";
@@ -758,7 +845,7 @@ function AddBeanSheet({ onAdd, onClose }) {
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
           padding: "16px 0", borderBottom: `0.5px solid ${BORDER}`, marginBottom: 8,
-          position: "sticky", top: 0, background: "#1C1C1E", zIndex: 1,
+          position: "sticky", top: 0, background: "#1C1C1E", zIndex: 100,
         }}>
           <button onClick={onClose} style={{
             background: "none", border: "none", color: TEXT_MED, fontSize: 15,
@@ -789,35 +876,29 @@ function AddBeanSheet({ onAdd, onClose }) {
           />
         </div>
 
-        {/* Roaster */}
+        {/* Roaster — searchable */}
         <div style={{
           background: SURFACE2, borderRadius: 10, padding: "12px 14px", margin: "0 0 12px",
           border: `0.5px solid ${BORDER}`,
         }}>
-          <input
+          <SearchableInput
             value={roaster}
-            onChange={e => setRoaster(e.target.value)}
-            placeholder="Roaster"
-            style={{
-              width: "100%", background: "transparent", border: "none", color: TEXT,
-              fontSize: 15, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
-            }}
+            onChange={setRoaster}
+            suggestions={POPULAR_ROASTERS}
+            placeholder="Roaster (type to search)"
           />
         </div>
 
-        {/* Origin */}
+        {/* Origin — searchable */}
         <div style={{
           background: SURFACE2, borderRadius: 10, padding: "12px 14px", margin: "0 0 4px",
           border: `0.5px solid ${BORDER}`,
         }}>
-          <input
+          <SearchableInput
             value={origin}
-            onChange={e => setOrigin(e.target.value)}
-            placeholder="Origin (e.g. Ethiopia, Colombia)"
-            style={{
-              width: "100%", background: "transparent", border: "none", color: TEXT,
-              fontSize: 15, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
-            }}
+            onChange={setOrigin}
+            suggestions={COFFEE_ORIGINS}
+            placeholder="Origin (type to search)"
           />
         </div>
 
@@ -868,6 +949,34 @@ export default function FellowBrewLog() {
   const [recipes, setRecipes] = useState(initialRecipes);
   const [beans, setBeans] = useState(initialBeans);
   const [showAddBean, setShowAddBean] = useState(false);
+  const [elevation, setElevation] = useState(null); // feet
+  const [elevationAuto, setElevationAuto] = useState(true);
+  const [editingElevation, setEditingElevation] = useState(false);
+
+  // Auto-detect elevation from geolocation
+  useEffect(() => {
+    if (!elevationAuto) return;
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const { latitude, longitude } = pos.coords;
+            const res = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${latitude},${longitude}`);
+            const data = await res.json();
+            if (data.results && data.results[0]) {
+              setElevation(Math.round(data.results[0].elevation * 3.281)); // meters to feet
+            }
+          } catch {
+            setElevation(2001); // fallback: Las Vegas approximate
+          }
+        },
+        () => setElevation(2001), // fallback on denied
+        { timeout: 5000 }
+      );
+    } else {
+      setElevation(2001);
+    }
+  }, [elevationAuto]);
 
   const updateRecipe = (beanId, newRecipe) => setRecipes(r => ({ ...r, [beanId]: newRecipe }));
   const applyTweak = (beanId, field, value) => setRecipes(r => ({ ...r, [beanId]: { ...r[beanId], [field]: value } }));
@@ -914,6 +1023,15 @@ export default function FellowBrewLog() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <div style={{ fontSize: 11, color: TEXT_DIM, letterSpacing: 2, textTransform: "uppercase" }}>Fellow</div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {elevation !== null && (
+              <div onClick={() => setEditingElevation(true)} style={{
+                background: SURFACE, border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 8,
+                padding: "4px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={TEXT_DIM} strokeWidth="2"><path d="M12 2l4 8H8z"/><path d="M2 22h20"/><path d="M6 18l6-12 6 12"/></svg>
+                <span style={{ fontSize: 11, color: TEXT_DIM }}>{elevation.toLocaleString()}ft</span>
+              </div>
+            )}
             <TempToggle useFahrenheit={useFahrenheit} onToggle={() => setUseFahrenheit(!useFahrenheit)} />
           </div>
         </div>
@@ -1027,7 +1145,7 @@ export default function FellowBrewLog() {
 
             {/* AI Panel */}
             {showAI && (
-              <AIPanel beanId={selectedBean} onApplyTweak={applyTweak} useFahrenheit={useFahrenheit} />
+              <AIPanel beanId={selectedBean} onApplyTweak={applyTweak} useFahrenheit={useFahrenheit} elevation={elevation} />
             )}
 
             {/* Brew history */}
@@ -1135,6 +1253,56 @@ export default function FellowBrewLog() {
 
       {showAddBean && (
         <AddBeanSheet onAdd={addBean} onClose={() => setShowAddBean(false)} />
+      )}
+
+      {/* Elevation editor */}
+      {editingElevation && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "flex-end",
+          justifyContent: "center", zIndex: 200,
+        }} onClick={() => setEditingElevation(false)}>
+          <div style={{
+            background: "#1C1C1E", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 420,
+            padding: "20px 24px 40px",
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <span style={{ fontSize: 17, fontWeight: 500, color: TEXT }}>Elevation</span>
+              <button onClick={() => setEditingElevation(false)} style={{
+                background: AMBER, border: "none", color: "#000", borderRadius: 8,
+                padding: "6px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+              }}>Done</button>
+            </div>
+
+            <div style={{ fontSize: 13, color: TEXT_DIM, lineHeight: 1.5, marginBottom: 16 }}>
+              Water boils at lower temperatures at higher elevations, affecting extraction.
+              {elevation !== null && ` At ${elevation.toLocaleString()}ft, water boils around ${Math.round(boilingPointF(elevation))}°F (${boilingPointC(elevation)}°C) instead of 212°F.`}
+            </div>
+
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
+              <input
+                type="number"
+                value={elevation || ""}
+                onChange={e => { setElevation(Number(e.target.value)); setElevationAuto(false); }}
+                style={{
+                  width: 140, fontSize: 36, fontWeight: 300, color: AMBER,
+                  background: "transparent", border: "none",
+                  borderBottom: `2px solid ${AMBER}`,
+                  textAlign: "center", fontFamily: "inherit", outline: "none",
+                }}
+              />
+              <span style={{ fontSize: 18, color: TEXT_DIM, marginLeft: 4 }}>ft</span>
+            </div>
+
+            <button onClick={() => { setElevationAuto(true); setEditingElevation(false); }} style={{
+              width: "100%", background: SURFACE2, border: `1px solid ${BORDER}`,
+              color: TEXT_MED, borderRadius: 10, padding: "12px", fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+              {elevationAuto ? "✓ Using auto-detected elevation" : "Re-detect from my location"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
